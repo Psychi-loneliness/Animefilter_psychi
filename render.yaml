@@ -1,12 +1,13 @@
-# Render.com blueprint — free web service + free Postgres is not needed:
-# the bot keeps its data in a small SQLite file, so mount a disk.
+# Render FREE plan — no disk (free services cannot attach one).
+# The library lives in /tmp and is auto-restored from your Telegram backup.
 services:
   - type: web
     name: anime-filter-bot
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python -m animebot
-    healthCheckPath: /
+    healthCheckPath: /healthz
     envVars:
       - key: BOT_TOKEN
         sync: false
@@ -17,8 +18,6 @@ services:
       - key: AUTO_MENU
         value: "true"
       - key: DB_PATH
-        value: /opt/render/project/src/data/animebot.db
-    disk:
-      name: bot-data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
+        value: /tmp/animebot.db
+      - key: AUTO_RESTORE_FILE_ID
+        sync: false

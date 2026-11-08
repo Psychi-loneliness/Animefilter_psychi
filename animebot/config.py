@@ -38,6 +38,7 @@ class Config:
     search_timeout: int = 180
     page_size: int = 8
     log_level: str = "INFO"
+    auto_restore_file_id: str = ""
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -51,4 +52,5 @@ class Config:
             search_timeout=int(os.getenv("SEARCH_TIMEOUT", "180") or 180),
             page_size=int(os.getenv("PAGE_SIZE", "8") or 8),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
+            auto_restore_file_id=os.getenv("AUTO_RESTORE_FILE_ID", "").strip(),
         )

@@ -9,6 +9,7 @@ from telegram.ext import Application, ApplicationBuilder
 
 from .config import Config
 from .db import Database
+from .boot import auto_restore_if_empty
 from .handlers import register
 from .health import start_if_needed
 
@@ -35,6 +36,7 @@ async def _post_init(app: Application) -> None:
     cooldown = await db.get_setting("auto_menu_cooldown", "")
     if cooldown.isdigit():
         config.auto_menu_cooldown = int(cooldown)
+    restored = await auto_restore_if_empty(app.bot, db, config.auto_restore_file_id)
     me = await app.bot.get_me()
     logging.getLogger(__name__).info(
         "Running as @%s • %s titles • auto menu %s",
@@ -42,6 +44,10 @@ async def _post_init(app: Application) -> None:
         await db.count_anime(),
         "on" if config.auto_menu else "off",
     )
+    if restored:
+        logging.getLogger(__name__).info(
+            "library was empty — restored from AUTO_RESTORE_FILE_ID"
+        )
 
 
 async def _post_stop(app: Application) -> None:

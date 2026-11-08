@@ -12,6 +12,7 @@ from telegram import Chat, Message, Update, User
 
 from animebot import ui
 from animebot.config import Config
+from animebot.db import Database
 from animebot.handlers import menu
 
 
@@ -599,3 +600,51 @@ async def test_backup_and_restore_commands(group_chat, user, config, db, tmp_pat
     await admin.restore_command(update, RestoreContext(db, config, backup))
     assert await db.count_anime() == 1
     assert "Restored" in msg.sent[-1]["text"]
+
+
+# ------------------------------------------------------- free-host resilience
+@pytest.mark.asyncio
+async def test_auto_restore_refills_a_wiped_database(tmp_path):
+    from animebot.boot import auto_restore_if_empty
+
+    src = Database(str(tmp_path / "src.db"))
+    await src.connect()
+    await src.add_anime("Bleach", "https://t.me/+b", "hindi", poster="F1")
+    backup = await src.snapshot()
+    await src.close()
+
+    wiped = Database(str(tmp_path / "wiped.db"))
+    await wiped.connect()
+    assert await wiped.count_anime() == 0
+
+    class FakeFile:
+        async def download_as_bytearray(self):
+            return bytearray(backup)
+
+    class FakeBot:
+        async def get_file(self, file_id):
+            assert file_id == "backup-id"
+            return FakeFile()
+
+    assert await auto_restore_if_empty(FakeBot(), wiped, "backup-id") is True
+    assert await wiped.count_anime() == 1
+    assert (await wiped.get_anime(1))["poster"] == "F1"
+
+    # no id / not empty -> nothing happens
+    assert await auto_restore_if_empty(FakeBot(), wiped, "") is False
+    await wiped.close()
+
+
+@pytest.mark.asyncio
+async def test_auto_restore_survives_a_bad_file_id(tmp_path):
+    from animebot.boot import auto_restore_if_empty
+
+    db = Database(str(tmp_path / "x.db"))
+    await db.connect()
+
+    class BrokenBot:
+        async def get_file(self, file_id):
+            raise RuntimeError("bad file id")
+
+    assert await auto_restore_if_empty(BrokenBot(), db, "oops") is False
+    await db.close()

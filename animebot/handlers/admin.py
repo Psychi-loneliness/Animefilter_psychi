@@ -468,7 +468,9 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         f"🎬 Anime: {stats['anime']}\n"
         f"💬 Group links: {stats['groups']}\n"
         f"🔔 Subscribers: {stats['users']}\n"
-        f"⚙️ Auto menu: {'on' if await db.get_setting('auto_menu', '1') == '1' else 'off'}",
+        f"⚙️ Auto menu: {'on' if await db.get_setting('auto_menu', '1') == '1' else 'off'}\n"
+        f"💾 Last backup: {'yes' if await db.get_setting('last_backup_file_id') else 'never'}\n"
+        f"♻️ Auto-restore: {'on' if _cfg(context).auto_restore_file_id else 'off'}",
         parse_mode=ParseMode.HTML,
     )
 
@@ -553,12 +555,25 @@ async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "<i>Keep this file. To move to a new host, send it with</i> "
         "<code>/restore</code> <i>as the caption.</i>"
     )
-    await message.reply_document(
+    sent = await message.reply_document(
         document=raw,
         filename="animebot-backup.db",
         caption=caption,
         parse_mode=ParseMode.HTML,
     )
+    # remember the file id and show it, so a free host can auto-restore after a wipe
+    try:
+        file_id = sent.document.file_id
+        await db.set_setting("last_backup_file_id", file_id)
+        await message.reply_text(
+            "<b>Free-host tip</b>\n"
+            "If your host wipes the disk, put this in the host's environment as "
+            "<code>AUTO_RESTORE_FILE_ID</code> and the library comes back by itself:\n"
+            f"<code>{ui.escape(file_id)}</code>",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception:  # noqa: BLE001 - a fake/documents-less chat should not fail the backup
+        log.debug("could not show the backup file id", exc_info=True)
 
 
 @admin_only

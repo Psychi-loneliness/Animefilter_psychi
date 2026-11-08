@@ -31,9 +31,11 @@ Everything is stored in one SQLite file, so you can add titles from your phone i
 seconds — including the **logo image**.
 
 **New here?**
-- 📱 **On a phone?** → [`MOBILE.md`](MOBILE.md) — the whole setup without a laptop.
-- 💻 **On a PC/VPS?** → [`SETUP.md`](SETUP.md) — click-by-click, with a self-check.
-- ☁️ **Hosting** → [`DEPLOY.md`](DEPLOY.md) — Railway / Render / Fly / Docker.
+- 📱 **On a phone (free, recommended)** → [`MOBILE.md`](MOBILE.md) — run it on your
+  own Android phone with Termux, or on Render's free plan. ₹0, no laptop, no card.
+- 💻 **On a PC** → [`SETUP.md`](SETUP.md) — click-by-click with a self-check.
+- ☁️ **Hosting notes** → [`DEPLOY.md`](DEPLOY.md) — free tiers, Docker, and how not
+  to lose data on hosts that wipe the disk.
 
 The short version is below.
 
@@ -135,7 +137,7 @@ Other admin commands:
 | `/posthere` | in a group: DM menus also post their cards here |
 | `/automenu on\|off` `/cooldown 120` | control the nudge |
 | `/stats` `/broadcast text` | counters / message subscribers |
-| `/backup` | sends `animebot-backup.db` to your chat (keep it in Saved Messages) |
+| `/backup` | sends `animebot-backup.db` + its file id (keep it in Saved Messages) |
 | `/restore` | caption a backup file with this → library restored |
 
 ### Which link is used for the join button?
@@ -203,8 +205,9 @@ EOF
 sudo systemctl enable --now animebot
 ```
 
-A `Procfile` (`worker: python -m animebot`) is included for Railway/Render-style
-hosts. Keep the SQLite file on a persistent volume, or set `DB_PATH` to one.
+`Procfile`, `Dockerfile`, `render.yaml` and a Termux installer are included.
+On hosts **without** a disk (Render free), set `AUTO_RESTORE_FILE_ID` to the id
+printed by `/backup` and the library restores itself after every wipe.
 
 ---
 
@@ -212,7 +215,7 @@ hosts. Keep the SQLite file on a persistent volume, or set `DB_PATH` to one.
 
 ```bash
 pip install -r requirements.txt pytest pytest-asyncio
-python -m pytest -q                 # 44 tests, no network / token needed
+python -m pytest -q                 # 46 tests, no network / token needed
 python -m scripts.preview_menu      # print every screen as text
 python -m scripts.doctor            # check .env, database and token
 ```

@@ -1,33 +1,32 @@
-# Deploy & operate (no laptop needed)
+# Deploying — free options only
 
-Pick one host, set two variables (`BOT_TOKEN`, `ADMIN_IDS`), deploy. The bot polls
-Telegram — no domain, no port forwarding, no webhook. If the host provides `PORT`,
-the bot also opens a tiny `GET /` health page so the platform sees it healthy.
+The bot is a Python process that polls Telegram: no domain, no open ports, no
+webhook required. If the host sets `PORT`, it also serves `GET /` and `/healthz`
+so platform health checks pass.
 
-## Railway
-1. New Project → Deploy from GitHub repo → branch `arena/a2e62907-animefilter-psychi`
-2. Variables: `BOT_TOKEN`, `ADMIN_IDS`, `BRAND`, `DB_PATH=/data/animebot.db`
-3. Settings → Volumes → mount `/data` (1 GB)
-4. Deploy → Logs should show `Running as @yourbot`
+| option | cost | always awake | data |
+|---|---|---|---|
+| **Android + Termux** (`MOBILE.md` Option A) | ₹0 | while phone is on | safe on phone |
+| **Render free** | ₹0, no card | no (sleeps 15 min, 750 h/month) | ephemeral → `/backup` + `AUTO_RESTORE_FILE_ID` |
+| **Own PC** (`pip install -r requirements.txt && python -m animebot`) | ₹0 | while PC is on | safe on disk |
 
-`railway.json` is included (start command + restart policy).
+Paid options (Railway trial credit, Fly, VPS) are documented in git history but
+not required — everything below is free.
 
-## Render
-1. New → Blueprint → pick the repo (uses `render.yaml`)
-2. Paste `BOT_TOKEN`, `ADMIN_IDS` → Apply
-3. The blueprint already mounts a 1 GB disk at `…/data` and sets `DB_PATH`
-4. Free plan sleeps after 15 min idle; first message then takes ~30 s
+## Render free plan
+`render.yaml` is already configured: `plan: free`, no disk, `DB_PATH=/tmp/animebot.db`,
+`AUTO_RESTORE_FILE_ID` as an optional secret. New → Blueprint → pick repo →
+paste `BOT_TOKEN`, `ADMIN_IDS` → Apply.
 
-## Fly.io
-```bash
-fly launch --copy-config --no-deploy      # Dockerfile is included
-fly volumes create botdata --size 1
-fly secrets set BOT_TOKEN=… ADMIN_IDS=…
-fly deploy
-```
-Mount the volume at `/data` and set `DB_PATH=/data/animebot.db`.
+After adding titles: `/backup` → copy the file id the bot prints →
+Environment → `AUTO_RESTORE_FILE_ID=<id>` → Save. Wipes now self-heal.
 
-## Docker (any VPS)
+## Android / Termux
+`termux-setup.sh` (install) and `termux-run.sh` (start + auto-restart loop with a
+wake lock) are in the repo root. Termux:Boot + `termux-boot.sh` gives auto-start
+after a reboot. Details in `MOBILE.md`.
+
+## Any host with Docker (free tiers on some providers)
 ```bash
 docker build -t animebot .
 docker run -d --name animebot --restart unless-stopped \
@@ -35,16 +34,14 @@ docker run -d --name animebot --restart unless-stopped \
   -v animebot-data:/data animebot
 docker logs -f animebot
 ```
-
-## systemd (plain VPS)
-See `SETUP.md` Step 15, or paste the block from `MOBILE.md` Option C.
+On hosts without volumes, set `AUTO_RESTORE_FILE_ID` instead of a volume.
 
 ## Keeping the library
-`/backup` sends `animebot-backup.db` in Telegram; `/restore` (as the file's
-caption) puts it back after a redeploy. The snapshot is written in plain SQLite
-journal mode so it works on any host and is the same file you could open on a
-PC.
+`/backup` sends `animebot-backup.db` + the file id; `/restore` (as the file's
+caption) puts it back. The snapshot is a plain SQLite file (DELETE journal mode),
+so it also opens on a PC.
 
-## Updating the bot
-- Railway/Render: push to the branch (or hit **Redeploy**) — the volume keeps data.
-- VPS: `cd Animefilter_psychi && git pull && systemctl restart animebot`.
+## Updating
+- Termux: `cd ~/Animefilter_psychi && git pull && bash termux-run.sh`
+- Render: dashboard → **Manual Deploy → Deploy latest commit**
+- Docker: rebuild and restart the container
