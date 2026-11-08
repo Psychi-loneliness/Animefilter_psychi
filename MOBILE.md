@@ -42,7 +42,16 @@ serve it. Two honest, free choices:
 Open **Termux** and paste this single line, then Enter:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/Psychi-loneliness/Animefilter_psychi/arena/a2e62907-animefilter-psychi/termux-setup.sh | bash
+curl -sLo ~/animebot-setup.sh https://raw.githubusercontent.com/Psychi-loneliness/Animefilter_psychi/arena/a2e62907-animefilter-psychi/termux-setup.sh && bash ~/animebot-setup.sh
+```
+
+*(Don't pipe it with `| bash` — the editor then has no keyboard. The script above
+downloads first, then runs. All on one line, one Enter.)*
+
+Prefer zero prompts? Put your values inline:
+
+```bash
+BOT_TOKEN="8123:AA…" ADMIN_IDS="123456789" bash ~/animebot-setup.sh
 ```
 
 It installs Python, downloads the bot, creates `.env`, opens an editor so you can
