@@ -56,6 +56,26 @@ async def _post_stop(app: Application) -> None:
         await db.close()
 
 
+def preflight(config: Config) -> None:
+    """Say clearly, in the terminal, what is wrong before Telegram errors pile up."""
+    ok, fail = "\033[1;32m✓\033[0m", "\033[1;31m✗\033[0m"
+    if not config.bot_token or config.bot_token.startswith("123456789:"):
+        raise SystemExit(
+            f"{fail} BOT_TOKEN is empty or still the example value.\n"
+            "  Edit .env (nano .env) and paste the token from @BotFather."
+        )
+    try:
+        import aiosqlite, telegram  # noqa: F401
+    except ImportError as exc:
+        raise SystemExit(
+            f"{fail} packages are missing ({exc.name}).\n"
+            "  Run: pip install -r requirements.txt"
+        ) from exc
+    print(f"{ok} token {config.bot_token[:8]}… · db {config.db_path} · "
+          f"admins {sorted(config.admin_ids) or 'none'}")
+    print("   connecting to Telegram… (Ctrl+C stops the bot)")
+
+
 def main() -> None:
     config = Config.from_env()
     # hosts mount an empty volume, so create the folder before opening SQLite
@@ -69,6 +89,7 @@ def main() -> None:
             "BOT_TOKEN is missing. Copy .env.example to .env and paste your token "
             "from @BotFather."
         )
+    preflight(config)
     start_if_needed()  # only when the host gives us a PORT (Render/Koyeb/Fly)
     app = build_application(config, Database(config.db_path))
     app.post_init = _post_init
