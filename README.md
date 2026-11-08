@@ -30,6 +30,9 @@ someone chats in the group
 Everything is stored in one SQLite file, so you can add titles from your phone in
 seconds — including the **logo image**.
 
+**New here?** [`SETUP.md`](SETUP.md) is a click-by-click walkthrough (BotFather →
+running → first anime → 24/7 hosting). The short version is below.
+
 ---
 
 ## 1. Create the bot
@@ -205,6 +208,7 @@ hosts. Keep the SQLite file on a persistent volume, or set `DB_PATH` to one.
 pip install -r requirements.txt pytest pytest-asyncio
 python -m pytest -q                 # 42 tests, no network / token needed
 python -m scripts.preview_menu      # print every screen as text
+python -m scripts.doctor            # check .env, database and token
 ```
 
 Layout:
