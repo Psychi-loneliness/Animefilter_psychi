@@ -30,8 +30,12 @@ someone chats in the group
 Everything is stored in one SQLite file, so you can add titles from your phone in
 seconds — including the **logo image**.
 
-**New here?** [`SETUP.md`](SETUP.md) is a click-by-click walkthrough (BotFather →
-running → first anime → 24/7 hosting). The short version is below.
+**New here?**
+- 📱 **On a phone?** → [`MOBILE.md`](MOBILE.md) — the whole setup without a laptop.
+- 💻 **On a PC/VPS?** → [`SETUP.md`](SETUP.md) — click-by-click, with a self-check.
+- ☁️ **Hosting** → [`DEPLOY.md`](DEPLOY.md) — Railway / Render / Fly / Docker.
+
+The short version is below.
 
 ---
 
@@ -131,6 +135,8 @@ Other admin commands:
 | `/posthere` | in a group: DM menus also post their cards here |
 | `/automenu on\|off` `/cooldown 120` | control the nudge |
 | `/stats` `/broadcast text` | counters / message subscribers |
+| `/backup` | sends `animebot-backup.db` to your chat (keep it in Saved Messages) |
+| `/restore` | caption a backup file with this → library restored |
 
 ### Which link is used for the join button?
 
@@ -206,7 +212,7 @@ hosts. Keep the SQLite file on a persistent volume, or set `DB_PATH` to one.
 
 ```bash
 pip install -r requirements.txt pytest pytest-asyncio
-python -m pytest -q                 # 42 tests, no network / token needed
+python -m pytest -q                 # 44 tests, no network / token needed
 python -m scripts.preview_menu      # print every screen as text
 python -m scripts.doctor            # check .env, database and token
 ```
@@ -217,7 +223,7 @@ Layout:
 animebot/
   __main__.py     entry point, Application wiring (long polling)
   config.py       .env → Config
-  db.py           SQLite: anime, posters, filters, group links, subscribers
+  db.py           SQLite: anime, posters, filters, group links, subscribers, backups
   card.py         filter-bot card parser  ["title"[label](buttonurl:…)]
   ui.py           all copy + inline keyboards (rebrand/translate here)
   handlers/

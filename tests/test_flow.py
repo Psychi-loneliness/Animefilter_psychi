@@ -509,3 +509,93 @@ async def test_card_without_image_posts_text_fallback(group_chat, user, config, 
     update, _ = make_update(group_chat, user, callback=f"a:{anime['id']}:latest:hindi")
     await menu.on_anime(update, context)
     assert "Case study of vanitas" in context.bot.messages[-1]["text"]
+
+
+# --------------------------------------------------------- backup / restore
+@pytest.mark.asyncio
+async def test_snapshot_roundtrip_keeps_everything(db):
+    await db.upsert_filter("action", "Action")
+    await db.add_anime("Bleach", "https://t.me/+b", "hindi", tags=["action"], poster="F1")
+    await db.set_group("menu", "https://t.me/+main")
+    await db.mark_joined(7, "action")
+    raw = await db.snapshot()
+    assert raw[:15] == b"SQLite format 3"
+    assert raw[18] == 1  # portable DELETE journal, not WAL
+
+    await db.add_anime("Temp", "", "english")
+    await db.restore(raw)
+    stats = await db.stats()
+    assert stats == {"anime": 1, "groups": 1, "users": 1}
+    anime = await db.get_anime(1)
+    assert (anime["title"], anime["poster"], anime["link"]) == (
+        "Bleach", "F1", "https://t.me/+b"
+    )
+    await db.add_anime("After", "", "hindi")  # still writable
+    assert await db.count_anime() == 2
+
+
+@pytest.mark.asyncio
+async def test_backup_and_restore_commands(group_chat, user, config, db, tmp_path):
+    from animebot.handlers import admin
+
+    config.admin_ids = frozenset({user.id})
+    await db.add_anime("Bleach", "https://t.me/+b", "hindi", poster="F1")
+    context = FakeContext(db, config)
+
+    sent = {}
+
+    class DocMessage(FakeMessage):
+        def __init__(self, chat, **kw):
+            super().__init__(chat)
+            self.kwargs = kw
+
+        async def reply_document(self, document, filename="", caption="", **kw):
+            sent.update(document=document, filename=filename, caption=caption)
+
+    update = SimpleNamespace(
+        callback_query=None, effective_message=DocMessage(group_chat),
+        effective_chat=group_chat, effective_user=user,
+    )
+    await admin.backup_command(update, context)
+    assert sent["filename"] == "animebot-backup.db"
+    assert sent["document"][:15] == b"SQLite format 3"
+    assert "1 anime" in sent["caption"].replace("<b>", "").replace("</b>", "")
+
+    # wipe, then restore from that exact file
+    backup = sent["document"]
+    await db._exec("DELETE FROM anime")
+    assert await db.count_anime() == 0
+
+    class RestoreFile:
+        def __init__(self, raw):
+            self.raw = raw
+            self.file_size = len(raw)
+            self.file_id = "backup-file-id"
+
+        async def download_as_bytearray(self):
+            return bytearray(self.raw)
+
+    class RestoreContext(FakeContext):
+        def __init__(self, db, config, raw):
+            super().__init__(db, config)
+            self.bot.get_file = self._get_file
+            self._raw = raw
+
+        async def _get_file(self, file_id):
+            raw = self._raw
+
+            class F:
+                async def download_as_bytearray(self_inner):
+                    return bytearray(raw)
+
+            return F()
+
+    msg = AdminMessage(group_chat)
+    msg.document = RestoreFile(backup)
+    update = SimpleNamespace(
+        callback_query=None, effective_message=msg,
+        effective_chat=group_chat, effective_user=user,
+    )
+    await admin.restore_command(update, RestoreContext(db, config, backup))
+    assert await db.count_anime() == 1
+    assert "Restored" in msg.sent[-1]["text"]

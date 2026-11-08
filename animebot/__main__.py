@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 from telegram.ext import Application, ApplicationBuilder
 
 from .config import Config
 from .db import Database
 from .handlers import register
+from .health import start_if_needed
 
 
 def build_application(config: Config, db: Database) -> Application:
@@ -50,6 +52,8 @@ async def _post_stop(app: Application) -> None:
 
 def main() -> None:
     config = Config.from_env()
+    # hosts mount an empty volume, so create the folder before opening SQLite
+    Path(config.db_path).parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=getattr(logging, config.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s • %(message)s",
@@ -59,6 +63,7 @@ def main() -> None:
             "BOT_TOKEN is missing. Copy .env.example to .env and paste your token "
             "from @BotFather."
         )
+    start_if_needed()  # only when the host gives us a PORT (Render/Koyeb/Fly)
     app = build_application(config, Database(config.db_path))
     app.post_init = _post_init
     app.post_stop = _post_stop

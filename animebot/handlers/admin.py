@@ -537,3 +537,58 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             failed += 1
         await asyncio.sleep(0.05)
     await status.edit_text(f"✅ Sent {sent} • ❌ Failed {failed}")
+
+
+# ------------------------------------------------------------ backup/restore
+@admin_only
+async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send the whole library as a file you can keep on your phone."""
+    db = _db(context)
+    message = update.effective_message
+    raw = await db.snapshot()
+    stats = await db.stats()
+    caption = (
+        "💾 <b>Backup</b>\n"
+        f"🎬 {stats['anime']} anime · 💬 {stats['groups']} links\n\n"
+        "<i>Keep this file. To move to a new host, send it with</i> "
+        "<code>/restore</code> <i>as the caption.</i>"
+    )
+    await message.reply_document(
+        document=raw,
+        filename="animebot-backup.db",
+        caption=caption,
+        parse_mode=ParseMode.HTML,
+    )
+
+
+@admin_only
+async def restore_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """``/restore`` as the caption of a backup file (or reply to one)."""
+    message = update.effective_message
+    target = message.reply_to_message if message.reply_to_message else message
+    document = target.document
+    if document is None:
+        await message.reply_text(
+            "Send the backup file with <code>/restore</code> as its caption, "
+            "or reply to the file with <code>/restore</code>.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    if document.file_size and document.file_size > 20 * 1024 * 1024:
+        await message.reply_text("That file is too large to be a backup.")
+        return
+    file = await context.bot.get_file(document.file_id)
+    raw = bytes(await file.download_as_bytearray())
+    db = _db(context)
+    try:
+        await db.restore(raw)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("restore failed", exc_info=True)
+        await message.reply_text(f"❌ That file is not a valid backup ({type(exc).__name__}).")
+        return
+    stats = await db.stats()
+    await message.reply_text(
+        "✅ <b>Restored</b>\n"
+        f"🎬 {stats['anime']} anime · 💬 {stats['groups']} links · 🔔 {stats['users']} subscribers",
+        parse_mode=ParseMode.HTML,
+    )

@@ -1,0 +1,24 @@
+# Render.com blueprint — free web service + free Postgres is not needed:
+# the bot keeps its data in a small SQLite file, so mount a disk.
+services:
+  - type: web
+    name: anime-filter-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m animebot
+    healthCheckPath: /
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: BRAND
+        value: Anime Galaxy
+      - key: AUTO_MENU
+        value: "true"
+      - key: DB_PATH
+        value: /opt/render/project/src/data/animebot.db
+    disk:
+      name: bot-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

@@ -41,6 +41,8 @@ def register(app: Application) -> None:
     app.add_handler(CommandHandler("cooldown", admin.cooldown_command))
     app.add_handler(CommandHandler("posthere", admin.posthere_command))
     app.add_handler(CommandHandler("broadcast", admin.broadcast_command))
+    app.add_handler(CommandHandler("backup", admin.backup_command))
+    app.add_handler(CommandHandler("restore", admin.restore_command))
 
     # --- inline keyboard callbacks ---------------------------------------
     app.add_handler(CallbackQueryHandler(menu.on_anime, pattern=r"^a:"))
@@ -58,6 +60,15 @@ def register(app: Application) -> None:
             & (filters.PHOTO | filters.Document.IMAGE)
             & filters.CaptionRegex(r"^/save(@\w+)?"),
             admin.save_command,
+        )
+    )
+    # --- /restore as the caption of the backup file -------------------------
+    app.add_handler(
+        MessageHandler(
+            filters.CAPTION
+            & filters.Document.ALL
+            & filters.CaptionRegex(r"^/restore(@\w+)?"),
+            admin.restore_command,
         )
     )
 

@@ -10,7 +10,9 @@ joined       which user joined through which link (so we can DM them updates)
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import sqlite3
 import time
 from typing import Any, Iterable, Sequence
 
@@ -335,6 +337,40 @@ class Database:
             "groups": int(groups["c"]) if groups else 0,
             "users": int(users["c"]) if users else 0,
         }
+
+    # --------------------------------------------------------------- backups
+    async def snapshot(self) -> bytes:
+        """Portable copy of the whole library (works on a live WAL connection)."""
+        target = sqlite3.connect(":memory:")
+        try:
+            await self.conn.backup(target)
+            # a WAL-mode image cannot be deserialized later; store a plain one
+            target.execute("PRAGMA journal_mode=DELETE")
+            target.execute("VACUUM")
+            return target.serialize()
+        finally:
+            target.close()
+
+    async def restore(self, raw: bytes) -> None:
+        """Replace everything with the contents of a snapshot file."""
+        path = self.path
+
+        def _restore() -> None:
+            source = sqlite3.connect(":memory:")
+            try:
+                source.deserialize(raw)
+                target = sqlite3.connect(path)
+                try:
+                    source.backup(target)
+                finally:
+                    target.close()
+            finally:
+                source.close()
+
+        # close our connection so nothing holds locks, swap the file, reopen
+        await self.close()
+        await asyncio.to_thread(_restore)
+        await self.connect()
 
     # --------------------------------------------------------------- settings
     async def set_setting(self, key: str, value: str) -> None:
