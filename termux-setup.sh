@@ -59,18 +59,32 @@ cd "$DIR" || die "could not enter $DIR"
 
 # ── Step 3: python packages ──────────────────────────────────────────────────
 say "Step 3/5 · Installing Python packages (2–4 min)"
-if python -m venv .venv >/dev/null 2>&1 && [ -x .venv/bin/python ]; then
-  # shellcheck disable=SC1091
-  . .venv/bin/activate
-  PYTHON=".venv/bin/python"
-else
-  warn "venv unavailable — installing into Termux python directly (also fine)"
-  PYTHON="python"
-  pkg install -y python-pip >/dev/null 2>&1 || true
+install_deps() {  # $1 = python interpreter
+  "$1" -m pip install --upgrade pip >>"$HOME/animebot-setup.log" 2>&1 || true
+  "$1" -m pip install -r requirements.txt >>"$HOME/animebot-setup.log" 2>&1
+}
+
+USE_VENV=0
+if python -m venv .venv >>"$HOME/animebot-setup.log" 2>&1 && [ -x .venv/bin/python ]; then
+  USE_VENV=1
+  PYTHON="$DIR/.venv/bin/python"
+  say "   using a private environment (.venv)"
+  if ! install_deps "$PYTHON"; then
+    warn "venv install failed on this device — falling back to Termux python"
+    USE_VENV=0
+  fi
 fi
-"$PYTHON" -m pip install -q --upgrade pip >/dev/null 2>&1 || true
-"$PYTHON" -m pip install -q -r requirements.txt \
-  || die "pip install failed. Try: pkg install -y python-pip && pip install -r requirements.txt"
+
+if [ "$USE_VENV" = "0" ]; then
+  # Termux: install straight into its own python (no venv needed)
+  PYTHON="$(command -v python)"
+  say "   installing into Termux python ($PYTHON)"
+  pkg install -y python-pip >>"$HOME/animebot-setup.log" 2>&1 || true
+  install_deps "$PYTHON" || die "pip install failed — see $HOME/animebot-setup.log"
+fi
+
+"$PYTHON" -c "import telegram, aiosqlite, dotenv" 2>/dev/null \
+  || die "packages did not import — see $HOME/animebot-setup.log"
 
 # ── Step 4: token + id ───────────────────────────────────────────────────────
 say "Step 4/5 · Configuration"
@@ -114,7 +128,7 @@ fi
 
 # ── Step 5: check ────────────────────────────────────────────────────────────
 say "Step 5/5 · Checking everything"
-"$PYTHON" -m scripts.doctor || true
+"$PYTHON" -m scripts.doctor || warn "self-check reported problems (see above)"
 
 cat <<TXT
 
@@ -141,4 +155,6 @@ Useful commands:
    pkill -f "python -m animebot"             stop the bot
    bash $DIR/termux-run.sh                   start / restart it
    bash $DIR/termux-setup.sh                 update to the newest version
+   bash $DIR/scripts/termux-check.sh         broken? run this and share the output
+   ~/animebot-setup.log                      installer log (if setup failed)
 TXT
