@@ -10,7 +10,7 @@ from telegram import Chat, Message, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
-from .. import ui
+from .. import card, ui
 from ..db import Database
 
 log = logging.getLogger(__name__)
@@ -73,75 +73,24 @@ def _payload(message: Message) -> str:
 
 
 # ----------------------------------------------------------------- /add /save
-LANG_ALIASES = {
-    "hi": "hindi", "hin": "hindi", "hindi": "hindi", "hindi dub": "hindi",
-    "en": "english", "eng": "english", "english": "english", "eng dub": "english",
-    "any": "any", "multi": "any", "both": "any", "dual": "any", "sub": "any",
-}
+def _extras_pairs(entry) -> list[list[str]]:
+    return [[e.label, e.url] for e in entry.other_buttons()]
 
 
-def _norm_lang(value: str) -> str | None:
-    return LANG_ALIASES.get(value.strip().lower())
-
-
-def _split_tags(value: str) -> list[str]:
-    parts = value.replace(";", ",").replace("/", ",").split(",")
-    return list(dict.fromkeys(ui.slugify(t) for t in parts if t.strip()))
-
-
-def _is_link(value: str) -> bool:
-    low = value.strip().lower()
-    return low.startswith(("http://", "https://", "t.me/", "@")) or "t.me/" in low
-
-
-def _parse_entry(raw: str) -> dict:
-    """Parse ``name | …extras`` where extras may be in any order.
-
-    Each ``|`` segment is recognised by its shape:
-      ``https://t.me/+abc``  → group / filter link
-      ``hindi`` / ``en``     → language
-      ``90``                 → popularity
-      ``action,shonen``      → tags
-    Explicit ``key=value`` segments are also accepted:
-      ``lang=hindi``, ``tags=action,fantasy``, ``pop=90``, ``link=…``.
-    """
-    segments = [seg.strip() for seg in raw.split("|")]
-    title = segments[0]
-    link, language, tags, popularity = "", "any", [], 0
-
-    for seg in segments[1:]:
-        if not seg:
-            continue
-        if "=" in seg:
-            key, value = (part.strip() for part in seg.split("=", 1))
-            key = key.lower()
-            if key in ("link", "url", "group"):
-                link = value
-            elif key in ("lang", "language", "audio", "dub"):
-                language = _norm_lang(value) or language
-            elif key in ("tags", "tag", "genre", "genres"):
-                tags = _split_tags(value)
-            elif key in ("pop", "popularity", "rating", "stars") and value.isdigit():
-                popularity = int(value)
-            elif key in ("title", "name"):
-                title = value
-            continue
-        if _is_link(seg):
-            link = seg
-        elif (lang := _norm_lang(seg)) is not None:
-            language = lang
-        elif seg.isdigit():
-            popularity = int(seg)
-        else:
-            tags = _split_tags(seg)
-
-    return {
-        "title": title,
-        "link": link,
-        "language": language,
-        "tags": tags,
-        "popularity": popularity,
-    }
+async def _persist(context, entry, poster: str = "") -> int:
+    """Upsert a parsed card / entry and return the anime id."""
+    db = _db(context)
+    for tag in entry.tags:
+        await db.upsert_filter(tag, tag.replace("-", " ").title())
+    return await db.add_anime(
+        title=entry.title,
+        link=entry.primary_link,
+        language=entry.language,
+        tags=entry.tags,
+        popularity=entry.popularity,
+        poster=poster,
+        extras=_extras_pairs(entry),
+    )
 
 
 def _poster_of(message: Message) -> str:
@@ -160,7 +109,7 @@ def _poster_of(message: Message) -> str:
 
 @admin_only
 async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """``/save <name> [| link | language | tags | popularity]`` with an image attached.
+    """``/save <name> …`` — accepts the filter-bot card syntax and/or a logo image.
 
     The image can be the message itself (as a caption) or the message the command
     replies to.
@@ -171,40 +120,37 @@ async def save_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await message.reply_text(ui.SAVE_HELP, parse_mode=ParseMode.HTML)
         return
 
-    entry = _parse_entry(raw)
-    if not entry["title"]:
+    entry = card.parse_entry(raw)
+    if not entry.title:
         await message.reply_text("Give me a name: <code>/save Demon Slayer</code>",
                                  parse_mode=ParseMode.HTML)
         return
 
     poster = _poster_of(message) or _poster_of(message.reply_to_message)
-    if not poster:
+    if not poster and not entry.primary_link:
         await message.reply_text(
-            "🖼 I need the logo image too.\n\n"
+            "🖼 I need the logo image or a join link.\n\n"
             "Send the image first, then <b>reply to it</b> with "
-            f"<code>/save {ui.escape(entry['title'])}</code>, "
-            "or send the image with the command as its caption.",
+            f"<code>/save {ui.escape(entry.title)}</code>, "
+            "or paste the card with a button URL.",
             parse_mode=ParseMode.HTML,
         )
         return
 
-    db = _db(context)
-    for tag in entry["tags"]:
-        await db.upsert_filter(tag, tag.replace("-", " ").title())
-    anime_id = await db.add_anime(
-        title=entry["title"],
-        link=entry["link"],
-        language=entry["language"],
-        tags=entry["tags"],
-        popularity=entry["popularity"],
-        poster=poster,
-    )
+    anime_id = await _persist(context, entry, poster)
+    preview = card.render_preview(entry, ui.escape)
     await message.reply_text(
-        ui.saved_text(anime_id, entry["title"], entry["language"], entry["tags"], True),
+        f"✅ <b>Saved #{anime_id}</b>"
+        + (" · 🖼 logo attached" if poster else " · no logo yet (<code>/poster "
+           + str(anime_id) + "</code> to add one)")
+        + "\n\n"
+        + preview
+        + "\n\n<i>Live under 🔥 Latest and its genres.</i>",
         parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
     )
-    if entry["tags"]:
-        await _notify_subscribers(context, entry["tags"], entry["title"])
+    if entry.tags:
+        await _notify_subscribers(context, entry.tags, entry.title)
 
 
 @admin_only
@@ -236,57 +182,47 @@ async def poster_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 @admin_only
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """``/add Title | link | language | tags | popularity`` (link still allowed)."""
+    """``/add`` — same parser as /save (link-only entries, no logo needed)."""
     message = update.effective_message
     raw = _payload(message)
     if not raw:
         await message.reply_text(
-            "<b>Add an anime</b>\n<code>/add Demon Slayer | https://t.me/+abc | "
-            "hindi | action,adventure | 90</code>\n\n"
-            "With a logo, use /save instead — send or reply to the image.",
+            "<b>Add an anime</b>\n"
+            "<code>/add Demon Slayer | hindi | action,adventure | 90</code>\n"
+            "<code>/add \"Demon Slayer\"[🍀Hindi dub🍀](buttonurl:https://t.me/+abc)</code>\n\n"
+            "With a logo, use /save instead.",
             parse_mode=ParseMode.HTML,
         )
         return
 
-    entry = _parse_entry(raw)
-    if not entry["title"]:
+    entry = card.parse_entry(raw)
+    if not entry.title:
         await message.reply_text("Title is required.")
         return
 
-    if not entry["link"]:
+    if not entry.primary_link:
         reply = message.reply_to_message
         if reply is not None and reply.text:
-            entry["link"] = reply.text.strip()
+            entry.link = reply.text.strip()
     poster = _poster_of(message) or _poster_of(message.reply_to_message)
 
-    if not entry["link"] and not poster:
+    if not entry.primary_link and not poster:
         await message.reply_text(
             "I need the filter bot link (or a logo image).\n"
             "<code>/add Title | https://…</code>\n"
-            "…or send the logo and use <code>/save Title</code>.",
+            "<code>/add \"Title\"[🍀Hindi dub🍀](buttonurl:https://…)</code>",
             parse_mode=ParseMode.HTML,
         )
         return
 
-    db = _db(context)
-    for tag in entry["tags"]:
-        await db.upsert_filter(tag, tag.replace("-", " ").title())
-    anime_id = await db.add_anime(
-        title=entry["title"],
-        link=entry["link"],
-        language=entry["language"],
-        tags=entry["tags"],
-        popularity=entry["popularity"],
-        poster=poster,
-    )
+    anime_id = await _persist(context, entry, poster)
     await message.reply_text(
-        ui.saved_text(
-            anime_id, entry["title"], entry["language"], entry["tags"], bool(poster)
-        ),
+        f"✅ <b>Saved #{anime_id}</b>\n\n" + card.render_preview(entry, ui.escape),
         parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
     )
-    if entry["tags"]:
-        await _notify_subscribers(context, entry["tags"], entry["title"])
+    if entry.tags:
+        await _notify_subscribers(context, entry.tags, entry.title)
 
 
 async def _notify_subscribers(
@@ -310,17 +246,51 @@ async def _notify_subscribers(
 # -------------------------------------------------------------- /filter
 @admin_only
 async def filter_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Two jobs:
+
+    1. Filter-bot card  → saves the anime
+       ``/filter "The Case Study of Vanitas"[🍀Hindi dub🍀](buttonurl:https://t.me/+x)``
+    2. Plain genre      → creates a genre button
+       ``/filter action Action & Adventure``
+    """
     message = update.effective_message
-    raw = _payload(message).replace("|", " ").strip()
+    raw = _payload(message)
     if not raw:
         await message.reply_text(
-            "<b>Add a genre / filter</b>\n"
-            "<code>/filter action Action &amp; Adventure</code>\n"
-            "The first word is the slug used in links and buttons; the rest is the label.",
+            "<b>Filter bot card → save the anime</b>\n"
+            '<code>/filter "The Case Study of Vanitas"[🍀Hindi dub🍀]'
+            "(buttonurl:https://t.me/+l16u8)</code>\n"
+            "<code>[🗞️Update](buttonurl:https://t.me/redlineanime)</code>\n\n"
+            "<b>Or create a genre button</b>\n"
+            "<code>/filter action Action &amp; Adventure</code>",
             parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
         )
         return
-    parts = raw.split(maxsplit=1)
+
+    if card.looks_like_card(raw):
+        entry = card.parse_entry(raw)
+        if not entry.title:
+            await message.reply_text("I could not read a title in that card.")
+            return
+        poster = _poster_of(message) or _poster_of(message.reply_to_message)
+        anime_id = await _persist(context, entry, poster)
+        await message.reply_text(
+            f"✅ <b>Card saved as #{anime_id}</b>"
+            + (" · 🖼 logo attached" if poster else "")
+            + "\n\n"
+            + card.render_preview(entry, ui.escape)
+            + "\n\n<i>Members now find it under 🔥 Latest, ⭐ Popular and its genres.</i>",
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+        if entry.tags:
+            await _notify_subscribers(context, entry.tags, entry.title)
+        return
+
+    # plain genre definition
+    cleaned = raw.replace("|", " ").strip()
+    parts = cleaned.split(maxsplit=1)
     slug = ui.slugify(parts[0])
     name = parts[1].strip() if len(parts) > 1 else slug.replace("-", " ").title()
     db = _db(context)

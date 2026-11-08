@@ -113,22 +113,23 @@ def saved_text(anime_id: int, title: str, language: str, tags: Iterable[str], ha
     )
 
 
-SAVE_HELP = """<b>🖼 Save an anime with its logo</b>
+SAVE_HELP = """<b>🖼 Save an anime</b>
 
-<b>Recommended</b> — send the logo image, then reply to it:
-<code>/save Demon Slayer</code>
+<b>1. Filter-bot card (what you already write)</b>
+<code>/filter "The Case Study of Vanitas"[🍀Hindi dub🍀](buttonurl:https://t.me/+l16u8)</code>
+<code>[🗞️Update](buttonurl:https://t.me/redlineanime)</code>
+Reads the title, language, join link and extra buttons automatically.
+Replace /filter with /save when you also attach a logo.
+
+<b>2. Reply to the logo image</b>
 <code>/save Demon Slayer | hindi | action,shonen | 95</code>
 
-<b>Or</b> caption the image itself:
-<i>send photo with caption</i> <code>/save Demon Slayer | hindi | action</code>
+<b>3. Caption the image</b>
+<code>/save Demon Slayer[🍀Hindi dub🍀](buttonurl:https://t.me/+abc)</code>
 
-<b>Extras are detected automatically, in any order:</b>
-<code>https://t.me/+abc</code> → the filter bot link
-<code>hindi</code> / <code>english</code> → audio language
-<code>action,shonen</code> → genres
-<code>95</code> → popularity (shows under ⭐ Popular)
-
-Prefer being explicit? <code>lang=hindi | tags=action,fantasy | pop=95</code>
+Extras are optional and order-free: <code>hindi</code>/<code>english</code>,
+<code>action,shonen</code>, <code>95</code>, a <code>t.me</code> link,
+or explicit <code>lang=hindi | tags=action | pop=95</code>.
 
 <code>/poster 12</code> (reply to an image) — attach or replace the logo of #12.
 """

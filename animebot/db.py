@@ -10,6 +10,7 @@ joined       which user joined through which link (so we can DM them updates)
 """
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Iterable, Sequence
 
@@ -22,6 +23,7 @@ CREATE TABLE IF NOT EXISTS anime (
     language    TEXT NOT NULL DEFAULT 'any',      -- hindi | english | any
     link        TEXT NOT NULL DEFAULT '',         -- link given by the filter bot
     poster      TEXT NOT NULL DEFAULT '',         -- Telegram file_id of the anime logo
+    extras      TEXT NOT NULL DEFAULT '[]',       -- JSON [[label, url], …] extra card buttons
     release_tag TEXT NOT NULL DEFAULT 'latest',   -- latest | popular | normal
     popularity  INTEGER NOT NULL DEFAULT 0,
     added_at    INTEGER NOT NULL,
@@ -95,10 +97,12 @@ class Database:
         cur = await self.conn.execute("PRAGMA table_info(anime)")
         columns = {row["name"] for row in await cur.fetchall()}
         await cur.close()
-        if "poster" not in columns:
-            await self.conn.execute(
-                "ALTER TABLE anime ADD COLUMN poster TEXT NOT NULL DEFAULT ''"
-            )
+        for name, ddl in (
+            ("poster", "ALTER TABLE anime ADD COLUMN poster TEXT NOT NULL DEFAULT ''"),
+            ("extras", "ALTER TABLE anime ADD COLUMN extras TEXT NOT NULL DEFAULT '[]'"),
+        ):
+            if name not in columns:
+                await self.conn.execute(ddl)
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -155,6 +159,7 @@ class Database:
         popularity: int = 0,
         tags: Sequence[str] = (),
         poster: str = "",
+        extras: Sequence[Sequence[str]] = (),
     ) -> int:
         """Insert a title, or refresh it when the same title+language exists.
 
@@ -162,24 +167,27 @@ class Database:
         can be added later without wiping the group link (and vice versa).
         """
         existing = await self._fetchone(
-            "SELECT id, link, poster FROM anime WHERE lower(title) = lower(?) AND language = ?",
+            "SELECT id, link, poster, extras FROM anime "
+            "WHERE lower(title) = lower(?) AND language = ?",
             (title, language),
         )
+        extras_json = json.dumps([list(e) for e in extras], ensure_ascii=False)
         if existing is None:
             anime_id = await self._exec(
-                "INSERT INTO anime (title, language, link, poster, release_tag, popularity, added_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (title, language, link, poster, release_tag, popularity, now()),
+                "INSERT INTO anime (title, language, link, poster, extras, release_tag, popularity, added_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (title, language, link, poster, extras_json, release_tag, popularity, now()),
             )
         else:
             anime_id = int(existing["id"])
             await self._exec(
-                "UPDATE anime SET title = ?, link = ?, poster = ?, release_tag = ?, "
-                "popularity = ? WHERE id = ?",
+                "UPDATE anime SET title = ?, link = ?, poster = ?, extras = ?, "
+                "release_tag = ?, popularity = ? WHERE id = ?",
                 (
                     title,
                     link or existing["link"],
                     poster or existing["poster"],
+                    extras_json if extras else (existing["extras"] or "[]"),
                     release_tag,
                     popularity,
                     anime_id,
@@ -203,6 +211,10 @@ class Database:
         if row is None:
             return None
         data = dict(row)
+        try:
+            data["extras"] = [list(e) for e in json.loads(data.get("extras") or "[]")]
+        except (ValueError, TypeError):
+            data["extras"] = []
         data["filters"] = [r["slug"] for r in await self._fetchall(
             "SELECT f.slug FROM filters f JOIN anime_filter af ON af.filter_id = f.id "
             "WHERE af.anime_id = ? ORDER BY f.name", (anime_id,))]

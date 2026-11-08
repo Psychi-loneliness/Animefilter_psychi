@@ -353,9 +353,11 @@ async def on_anime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await query.answer("That title was removed.", show_alert=True)
         return
 
+    # the link written in the card (/save …) wins; the filter/group link is the fallback
     group = await _link_for(db, slug, language or anime["language"])
+    join_url = (anime.get("link") or "").strip() or (group["link"] if group else "")
     caption = ui.anime_card(anime["title"], anime["language"], anime["filters"])
-    if group is None:
+    if not join_url:
         await query.answer("No group link saved for this filter yet.", show_alert=True)
         await query.message.reply_text(
             ui.no_group_link_text(), parse_mode=ParseMode.HTML
@@ -363,18 +365,25 @@ async def on_anime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     label = f"🚀 Join & watch {ui.short(anime['title'], 24)}"
-    markup = InlineKeyboardMarkup(
+    rows = [[InlineKeyboardButton(label, url=join_url)]]
+    # extra buttons written in the card, e.g. [🗞️Update](buttonurl:https://t.me/channel)
+    for extra in anime.get("extras", []):
+        try:
+            extra_label, extra_url = extra
+        except (TypeError, ValueError):
+            continue
+        if extra_url and extra_url != join_url:
+            rows.append([InlineKeyboardButton(extra_label or "🔗 Open", url=extra_url)])
+    rows.append(
         [
-            [InlineKeyboardButton(label, url=group["link"])],
-            [
-                InlineKeyboardButton(
-                    "🔔 Send me new episodes",
-                    callback_data=f"sub:{slug}:{language or anime['language']}",
-                ),
-                InlineKeyboardButton("🎬 Anime menu", callback_data=f"{ui.CALLBACK_MENU}:home"),
-            ],
+            InlineKeyboardButton(
+                "🔔 Send me new episodes",
+                callback_data=f"sub:{slug}:{language or anime['language']}",
+            ),
+            InlineKeyboardButton("🎬 Anime menu", callback_data=f"{ui.CALLBACK_MENU}:home"),
         ]
     )
+    markup = InlineKeyboardMarkup(rows)
 
     chat = update.effective_chat
     posted_elsewhere = False

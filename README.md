@@ -65,35 +65,53 @@ help - How to use
 
 ---
 
-## 2. Save anime (name + logo) — the important part
+## 2. Save anime — your filter-bot card works as-is
 
-You have two ways; both accept the same extras:
-
-**A. Reply to an image (recommended)**
+Paste the same line you already write for your filter bot:
 
 ```
-1. send the anime logo/poster in the chat
-2. reply to that image with:
-   /save Demon Slayer
-   /save Demon Slayer | hindi | action,shonen | 95
+/filter "the Case study of vanitas"[🍀Hindi dub🍀](buttonurl:https://t.me/+l16u8HgUO3BmZThl)
+[🗞️Update](buttonurl:https://t.me/redlineanime)
 ```
 
-**B. Caption the image**
+The bot reads it like a human does:
 
-```
-send the image with caption:
-/save Solo Leveling | hindi | isekai | 90
-```
-
-Extras are recognised **in any order**, so you can skip the link:
-
-| you type | meaning |
+| part of your line | what the bot stores |
 |---|---|
-| `https://t.me/+abc` | group / filter bot link for this title |
-| `hindi`, `en`, `eng`, `multi` | audio language (default `any`) |
-| `action,shonen` | genres (creates the genre button if new) |
-| `95` | popularity → shows higher under ⭐ Popular |
-| `lang=hindi`, `tags=action,fantasy`, `pop=95` | explicit form |
+| `"the Case study of vanitas"` | title (quotes optional) |
+| `[🍀Hindi dub🍀]` | language → `hindi` (searched under 🇮🇳 Hindi) |
+| first `(buttonurl:…)` | the join link used by the “🚀 Join & watch” button |
+| extra `[🗞️Update](buttonurl:…)` | an extra button kept on the card |
+| genre words in a label, e.g. `[🔥Action🍀Hindi dub🔥]` | genre tags |
+
+So the posted card looks like this in the group:
+
+```
+🖼 <logo if you attached one>
+🎬 The Case study of vanitas
+🗣 🇮🇳 Hindi
+
+[ 🚀 Join & watch The Case study of vanit… ]
+[ 🗞️Update ]
+```
+
+Notes:
+
+* `/filter` with a card **saves the anime**; `/filter action Action & Adventure`
+  (no brackets) still just creates a genre button — both behaviours coexist.
+* `/save` is identical to the card form **plus** it accepts the logo: send the
+  image, reply to it with the card, done. You can also caption the image itself.
+* `the Case…` gets its first letter capitalised; quotes, emoji and the
+  `buttonurl:` prefix are stripped.
+* Two dub buttons (e.g. Hindi + English) mark the title as multi-audio so it
+  appears in both searches.
+* Re-sending the same card updates the entry in place and keeps its logo.
+
+```
+/save "Demon Slayer"[🍀Hindi dub🍀](buttonurl:https://t.me/+abc)   ← reply to the logo
+/filter "Solo Leveling" [🌀Isekai, Action🌀](buttonurl:https://t.me/+solo)
+/save Demon Slayer | hindi | action,shonen | 95                    ← plain format too
+```
 
 Other admin commands:
 
@@ -103,30 +121,22 @@ Other admin commands:
 | `/find demon` | list ids of matching titles |
 | `/del 12` | delete a title |
 | `/quick 12 95` | set popularity |
-| `/add Title \| link \| hindi \| action \| 90` | add without a logo |
-| `/filter isekai 🌀 Isekai` | create a genre/filter button |
-| `/filters` `/unfilter isekai` | list / delete filters |
-| `/setgroup menu https://t.me/+xxxx` | default join link (used by any filter) |
-| `/setgroup action:hindi https://t.me/+yyyy` | dedicated link for a filter + language |
+| `/filters` `/unfilter action` | list / delete genre buttons |
+| `/setgroup menu https://t.me/+xxxx` | default link (used when a card has no link) |
+| `/setgroup action:hindi https://t.me/+yyyy` | link for a filter + language |
 | `/groups` `/ungroup action` | list / delete saved links |
 | `/posthere` | in a group: DM menus also post their cards here |
 | `/automenu on\|off` `/cooldown 120` | control the nudge |
 | `/stats` `/broadcast text` | counters / message subscribers |
 
-### Which group link is used?
-
-When a member taps a title, the bot looks for the most specific link first:
+### Which link is used for the join button?
 
 ```
-<filter>:<language>   →   <filter>   →   <filter>   →   menu (default)
+link written in the card   →   <filter>:<language>   →   <filter>   →   menu (default)
 ```
 
-Example: tapping a title found under **🎭 Action** while the user searched in
-**Hindi** uses `action:hindi` if you saved one, otherwise `action`, otherwise the
-default `menu` link. Because a poster-only entry has no link of its own, the saved
-group link is what makes the "Join & watch" button work.
-
----
+The card’s own `buttonurl` always wins; otherwise the filter-specific link, then
+the default `menu` link. If none exist the bot tells you to run `/setgroup`.
 
 ## 3. How members use it
 
@@ -193,7 +203,7 @@ hosts. Keep the SQLite file on a persistent volume, or set `DB_PATH` to one.
 
 ```bash
 pip install -r requirements.txt pytest pytest-asyncio
-python -m pytest -q                 # 34 tests, no network / token needed
+python -m pytest -q                 # 42 tests, no network / token needed
 python -m scripts.preview_menu      # print every screen as text
 ```
 
@@ -204,6 +214,7 @@ animebot/
   __main__.py     entry point, Application wiring (long polling)
   config.py       .env → Config
   db.py           SQLite: anime, posters, filters, group links, subscribers
+  card.py         filter-bot card parser  ["title"[label](buttonurl:…)]
   ui.py           all copy + inline keyboards (rebrand/translate here)
   handlers/
     menu.py       auto menu, 4 options, search, join posting

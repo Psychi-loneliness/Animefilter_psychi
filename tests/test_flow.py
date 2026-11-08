@@ -232,15 +232,18 @@ async def test_tapping_anime_posts_name_and_join_link_in_group(group_chat, user,
     url_buttons = [
         b for row in posted["reply_markup"].inline_keyboard for b in row if b.url
     ]
-    # filter slug "latest" has no dedicated link -> falls back to the menu group
-    assert url_buttons[0].url == "https://t.me/+MAIN_GC"
+    # the title's own link (as saved by the admin) wins
+    assert url_buttons[0].url == "https://t.me/+demo-hi"
     assert "Join" in url_buttons[0].text
 
 
 @pytest.mark.asyncio
 async def test_hindi_action_filter_uses_the_dedicated_group_link(group_chat, user, config, seeded):
     context = FakeContext(seeded, config)
-    anime = (await seeded.search("Demon Slayer", "hindi"))[0]
+    # a poster-only entry (no link written in the card) falls back to /setgroup links
+    await seeded.upsert_filter("action", "🔥 Action")
+    anime_id = await seeded.add_anime("Bleach", "", "hindi", tags=["action"], poster="FILE")
+    anime = {"id": anime_id}
     update, _ = make_update(group_chat, user, callback=f"a:{anime['id']}:action:hindi")
     await menu.on_anime(update, context)
     url = [b for row in context.bot.messages[-1]["reply_markup"].inline_keyboard
@@ -250,7 +253,7 @@ async def test_hindi_action_filter_uses_the_dedicated_group_link(group_chat, use
 
 @pytest.mark.asyncio
 async def test_missing_group_link_tells_admin_what_to_do(group_chat, user, config, db):
-    await db.add_anime("Lonely Show", "x", "hindi")
+    await db.add_anime("Lonely Show", "", "hindi")
     anime = (await db.search("Lonely", "hindi"))[0]
     context = FakeContext(db, config)
     update, message = make_update(group_chat, user, callback=f"a:{anime['id']}:latest:hindi")
@@ -421,3 +424,88 @@ async def test_add_keeps_existing_poster_when_link_updated(group_chat, user, con
     row = (await db.search("Frieren", "hindi"))[0]
     assert row["link"] == "https://t.me/+newlink"
     assert row["poster"] == "keep-me"
+
+
+# ------------------------------------------------- filter-bot card support
+USER_CARD = (
+    '/filter "the Case study of vanitas"[🍀Hindi dub🍀]'
+    '(buttonurl:https://t.me/+l16u8HgUO3BmZThl)\n'
+    '[🗞️Update](buttonurl:https://t.me/redlineanime)'
+)
+
+
+@pytest.mark.asyncio
+async def test_filter_command_saves_the_filter_bot_card(group_chat, user, config, db):
+    from animebot.handlers import admin
+
+    await db.set_group("menu", "https://t.me/+MAIN")
+    config.admin_ids = frozenset({user.id})
+    context = FakeContext(db, config)
+    update, message = make_admin_update(group_chat, user, text=USER_CARD)
+    await admin.filter_command(update, context)
+
+    assert "Card saved" in message.sent[-1]["text"]
+    rows = await db.search("vanitas", "hindi")
+    assert len(rows) == 1
+    saved = await db.get_anime(rows[0]["id"])
+    assert saved["title"] == "The Case study of vanitas"
+    assert saved["language"] == "hindi"
+    assert saved["link"] == "https://t.me/+l16u8HgUO3BmZThl"
+    assert saved["extras"] == [["🗞️Update", "https://t.me/redlineanime"]]
+
+
+@pytest.mark.asyncio
+async def test_filter_command_still_creates_plain_genres(group_chat, user, config, db):
+    from animebot.handlers import admin
+
+    config.admin_ids = frozenset({user.id})
+    context = FakeContext(db, config)
+    update, message = make_admin_update(group_chat, user, text="/filter isekai 🌀 Isekai")
+    await admin.filter_command(update, context)
+    row = await db._fetchone("SELECT name FROM filters WHERE slug='isekai'")
+    assert row["name"] == "🌀 Isekai"
+
+
+@pytest.mark.asyncio
+async def test_card_saved_by_save_also_keeps_update_button(group_chat, user, config, db):
+    from animebot.handlers import admin
+    from animebot.handlers import menu
+
+    await db.set_group("menu", "https://t.me/+MAIN")
+    config.admin_ids = frozenset({user.id})
+    context = FakeContext(db, config)
+    update, _ = make_admin_update(group_chat, user, text=USER_CARD.replace("/filter", "/save"))
+    await admin.save_command(update, context)
+
+    anime = (await db.search("vanitas", "hindi"))[0]
+    card = await db.get_anime(anime["id"])
+    update, _ = make_update(group_chat, user, callback=f"a:{anime['id']}:latest:hindi")
+    await menu.on_anime(update, context)
+
+    buttons = [
+        button
+        for row in context.bot.messages[-1]["reply_markup"].inline_keyboard
+        for button in row
+        if button.url
+    ]
+    by_url = {b.url: b.text for b in buttons}
+    assert "https://t.me/+l16u8HgUO3BmZThl" in by_url
+    assert any("Join" in text for text in by_url.values())
+    assert by_url["https://t.me/redlineanime"] == "🗞️Update"
+
+
+@pytest.mark.asyncio
+async def test_card_without_image_posts_text_fallback(group_chat, user, config, db):
+    from animebot.handlers import admin
+    from animebot.handlers import menu
+
+    await db.set_group("menu", "https://t.me/+MAIN")
+    config.admin_ids = frozenset({user.id})
+    context = FakeContext(db, config)
+    update, _ = make_admin_update(group_chat, user, text=USER_CARD)
+    await admin.filter_command(update, context)
+
+    anime = (await db.search("vanitas", "hindi"))[0]
+    update, _ = make_update(group_chat, user, callback=f"a:{anime['id']}:latest:hindi")
+    await menu.on_anime(update, context)
+    assert "Case study of vanitas" in context.bot.messages[-1]["text"]
